@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graph Compression — Research Demo</title>
+  <meta name="description" content="Interactive research demo: WAV → Temporal Graph → Soft Compression (α learning) → Hard Compression with step-by-step animation." />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <!-- ═══════ HERO ═══════ -->
+  <header class="hero">
+    <div class="hero-text">
+      <div class="hero-eyebrow"><span class="dot"></span> Research Demo</div>
+      <h1>Temporal Graph<br>Compression</h1>
+      <p class="hero-sub">
+        WAV audio → MFCC features → Temporal graph → Soft α-learned compression
+        → Step-by-step hard compression with live animation.
+      </p>
+      <div class="hero-actions">
+        <span style="font-size:12px;color:var(--text-muted)">
+          Re-implementation of <code style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent)">graph_compression_visualisation.py</code> in pure JS
+        </span>
+      </div>
+    </div>
+    <div class="theme-toggle-wrap">
+      <span>☀️</span>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark/light mode"></button>
+      <span>🌙</span>
+    </div>
+  </header>
+
+  <!-- ═══════ AUDIO INPUT ═══════ -->
+  <section class="audio-section glass-card" aria-label="Audio Input">
+    <div class="section-title">Audio Input</div>
+
+    <div class="audio-controls">
+      <!-- Record -->
+      <button class="btn btn-primary" id="btnRecord">
+        <span class="btn-icon">🎙️</span> Start Recording
+      </button>
+      <button class="btn btn-danger" id="btnStop" disabled>
+        <span class="btn-icon">⏹</span> Stop &amp; Process
+      </button>
+
+      <!-- Upload -->
+      <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload WAV file">
+        <input type="file" id="fileInput" accept=".wav,audio/*" aria-hidden="true" />
+        <div class="upload-zone-text">📂 Upload WAV / Audio</div>
+        <div class="upload-zone-sub">Click or drag-and-drop</div>
+      </div>
+    </div>
+
+    <!-- Sample WAVs -->
+    <div class="sample-row">
+      <span class="sample-label">Samples:</span>
+      <button class="btn-sample" data-sample="samples/sample1.wav">
+        🎵 Sample 1 <small>(220ms tone)</small>
+      </button>
+      <button class="btn-sample" data-sample="samples/sample2.wav">
+        🎵 Sample 2 <small>(440ms tone)</small>
+      </button>
+      <button class="btn-sample" data-sample="samples/sample3.wav">
+        🎵 Sample 3 <small>(speech burst)</small>
+      </button>
+      <button class="btn-sample" data-sample="samples/sample4.wav">
+        🎵 Sample 4 <small>(noise burst)</small>
+      </button>
+    </div>
+
+    <!-- Waveform -->
+    <div class="waveform-wrap">
+      <span class="waveform-label">Waveform</span>
+      <div class="recording-indicator" id="recIndicator">
+        <div class="rec-dot"></div> REC
+      </div>
+      <canvas id="waveformCanvas"></canvas>
+    </div>
+  </section>
+
+  <!-- ═══════ PIPELINE STEPS ═══════ -->
+  <section class="pipeline-section glass-card" aria-label="Pipeline Progress">
+    <div class="section-title">Pipeline</div>
+
+    <div class="steps-track" id="stepsTrack">
+      <div class="step-item" id="step1">
+        <div class="step-dot">1</div>
+        <div class="step-label">Build temporal graph</div>
+      </div>
+      <div class="step-item" id="step2">
+        <div class="step-dot">2</div>
+        <div class="step-label">Learn α (soft compress)</div>
+      </div>
+      <div class="step-item" id="step3">
+        <div class="step-dot">3</div>
+        <div class="step-label">Apply soft compression</div>
+      </div>
+      <div class="step-item" id="step4">
+        <div class="step-dot">4</div>
+        <div class="step-label">Hard compression</div>
+      </div>
+    </div>
+
+    <div class="status-bar" id="statusText">
+      Waiting for audio input. Upload a WAV, choose a sample, or record.
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-chip">
+        <span class="stat-num" id="statNodes">—</span>
+        <span class="stat-key">Nodes (frames)</span>
+      </div>
+      <div class="stat-chip">
+        <span class="stat-num" id="statEdges">—</span>
+        <span class="stat-key">Edges</span>
+      </div>
+      <div class="stat-chip">
+        <span class="stat-num" id="statRemaining">—</span>
+        <span class="stat-key">Remaining</span>
+      </div>
+      <div class="stat-chip">
+        <span class="stat-num" id="statRemoved">—</span>
+        <span class="stat-key">Removed</span>
+      </div>
+      <div class="stat-chip">
+        <span class="stat-num" id="statRatio">—</span>
+        <span class="stat-key">Compression</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ GRAPH VISUALIZER ═══════ -->
+  <section class="graph-section glass-card" aria-label="Graph Visualization">
+    <div class="section-title">Graph Evolution</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;display:flex;gap:20px;flex-wrap:wrap;">
+      <span style="display:flex;align-items:center;gap:6px">
+        <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="var(--edge-gray)" stroke-width="2" marker-end="url(#lg)"/><defs><marker id="lg" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0 0,6 3,0 6" fill="var(--edge-gray)"/></marker></defs></svg>
+        Original edge (t→t+1)
+      </span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <svg width="32" height="20"><path d="M2,14 Q16,2 30,14" fill="none" stroke="var(--edge-crimson)" stroke-width="2" marker-end="url(#lc)"/><defs><marker id="lc" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0 0,6 3,0 6" fill="var(--edge-crimson)"/></marker></defs></svg>
+        Merge edge (crimson arc)
+      </span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <svg width="16" height="16"><circle cx="8" cy="8" r="7" fill="var(--node-fill)" stroke="var(--node-stroke)" stroke-width="2"/></svg>
+        Node (frame)
+      </span>
+    </div>
+    <div class="graph-scroll" id="graphScroll">
+      <svg id="graphSvg" xmlns="http://www.w3.org/2000/svg" height="200" width="400">
+        <text x="50%" y="50%" text-anchor="middle" dy="0.35em"
+              fill="var(--text-muted)" font-size="13" font-family="Inter, sans-serif">
+          Graph will appear here after audio is processed.
+        </text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ═══════ TRAINING DASHBOARD ═══════ -->
+  <section class="training-section glass-card" aria-label="Training Dashboard">
+    <div class="section-title">Training Dashboard</div>
+
+    <div class="live-badge-row">
+      <div class="live-badge">
+        <span class="live-badge-val" id="alphaValue">—</span>
+        <span class="live-badge-key">α (alpha)</span>
+      </div>
+      <div class="live-badge">
+        <span class="live-badge-val" id="totalLoss">—</span>
+        <span class="live-badge-key">Total Loss</span>
+      </div>
+      <div class="epoch-badge" id="epochBadge">Epoch —</div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-panel">
+        <canvas id="alphaCanvas" width="420" height="200"></canvas>
+      </div>
+      <div class="chart-panel">
+        <canvas id="lossCanvas" width="420" height="200"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════ COMPLETE BANNER ═══════ -->
+  <div class="complete-banner" id="completeBanner" role="status" aria-live="polite">
+    <span class="complete-icon">✅</span>
+    <div>
+      <strong>Pipeline complete.</strong>
+      <span id="completeSummary"> See stats above for compression results.</span>
+    </div>
+  </div>
+
+</div><!-- /.app-wrapper -->
+
+<!-- ─── Main Entry Script ──────────────────────────────────────────────── -->
+<script type="module">
+  import { startRecording, stopRecording, loadFile, loadUrl, isRecording } from './js/audio.js';
+  import { WaveformRenderer } from './js/waveform.js';
+  import { Pipeline } from './js/pipeline.js';
+
+  // ── Theme ──────────────────────────────────────────────────────────────
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('themeToggle');
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  root.setAttribute('data-theme', savedTheme);
+
+  themeBtn.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  });
+
+  // ── Element refs ────────────────────────────────────────────────────────
+  const btnRecord   = document.getElementById('btnRecord');
+  const btnStop     = document.getElementById('btnStop');
+  const fileInput   = document.getElementById('fileInput');
+  const uploadZone  = document.getElementById('uploadZone');
+  const recIndicator= document.getElementById('recIndicator');
+  const waveformCvs = document.getElementById('waveformCanvas');
+  const graphSvg    = document.getElementById('graphSvg');
+  const graphScroll = document.getElementById('graphScroll');
+  const statusText  = document.getElementById('statusText');
+  const epochBadge  = document.getElementById('epochBadge');
+  const alphaValue  = document.getElementById('alphaValue');
+  const totalLoss   = document.getElementById('totalLoss');
+  const completeBanner = document.getElementById('completeBanner');
+
+  // Resize waveform canvas to its container
+  function resizeWave() {
+    waveformCvs.width  = waveformCvs.parentElement.clientWidth || 600;
+    waveformCvs.height = 80;
+  }
+  resizeWave();
+  window.addEventListener('resize', resizeWave);
+
+  // ── Waveform renderer ───────────────────────────────────────────────────
+  const waveRenderer = new WaveformRenderer(waveformCvs);
+
+  // ── Pipeline ─────────────────────────────────────────────────────────────
+  const pipeline = new Pipeline({
+    graphSvg,
+    statusText,
+    epochBadge,
+    alphaValue:  { textContent: '—', set textContent(v){ alphaValue.textContent = v; } },
+    totalLoss:   { textContent: '—', set textContent(v){ totalLoss.textContent  = v; } },
+    alphaCanvas: document.getElementById('alphaCanvas'),
+    lossCanvas:  document.getElementById('lossCanvas'),
+    completeBanner,
+    stepItems:   [1,2,3,4].map(n => document.getElementById(`step${n}`)),
+    stats: {
+      nodes:     document.getElementById('statNodes'),
+      edges:     document.getElementById('statEdges'),
+      remaining: document.getElementById('statRemaining'),
+      removed:   document.getElementById('statRemoved'),
+      ratio:     document.getElementById('statRatio'),
+    },
+  });
+
+  // Override pipeline UI refs for number tickers
+  pipeline.ui.alphaValue = alphaValue;
+  pipeline.ui.totalLoss  = totalLoss;
+
+  async function runWithPCM(pcm) {
+    completeBanner.classList.remove('visible');
+    waveRenderer.showStatic(pcm);
+    pipeline.cancel();
+    await new Promise(r => setTimeout(r, 80));
+    await pipeline.run(pcm);
+  }
+
+  // ── Recording ────────────────────────────────────────────────────────────
+  btnRecord.addEventListener('click', async () => {
+    if (isRecording()) return;
+    try {
+      await startRecording(analyser => waveRenderer.startLive(analyser));
+      btnRecord.disabled = true;
+      btnStop.disabled   = false;
+      recIndicator.classList.add('active');
+      statusText.textContent = 'Recording… click ⏹ to stop.';
+    } catch (err) {
+      statusText.textContent = `Mic error: ${err.message}`;
+    }
+  });
+
+  btnStop.addEventListener('click', async () => {
+    try {
+      waveRenderer.stopLive();
+      recIndicator.classList.remove('active');
+      statusText.textContent = 'Processing recording…';
+      const pcm = await stopRecording();
+      btnRecord.disabled = false;
+      btnStop.disabled   = true;
+      await runWithPCM(pcm);
+    } catch (err) {
+      statusText.textContent = `Error: ${err.message}`;
+      btnRecord.disabled = false;
+      btnStop.disabled   = true;
+    }
+  });
+
+  // ── File upload ──────────────────────────────────────────────────────────
+  fileInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    statusText.textContent = `Loading ${file.name}…`;
+    try {
+      const pcm = await loadFile(file);
+      await runWithPCM(pcm);
+    } catch (err) {
+      statusText.textContent = `Error decoding file: ${err.message}`;
+    }
+    fileInput.value = '';
+  });
+
+  // Drag-and-drop
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', async e => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    statusText.textContent = `Loading ${file.name}…`;
+    try {
+      const pcm = await loadFile(file);
+      await runWithPCM(pcm);
+    } catch (err) {
+      statusText.textContent = `Error: ${err.message}`;
+    }
+  });
+
+  // ── Sample WAVs ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.btn-sample').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url = btn.dataset.sample;
+      statusText.textContent = `Loading ${url}…`;
+      try {
+        const pcm = await loadUrl(url);
+        await runWithPCM(pcm);
+      } catch (err) {
+        // Sample WAVs may not exist — generate synthetic tone instead
+        statusText.textContent = `Generating synthetic audio (sample file not found)…`;
+        const pcm = generateSyntheticPCM(btn.dataset.sample);
+        await runWithPCM(pcm);
+      }
+    });
+  });
+
+  /**
+   * Fallback: generate synthetic PCM so the demo works without WAV files.
+   * Creates 0.5–1.5s of a sine/noise burst at 16kHz.
+   */
+  function generateSyntheticPCM(url) {
+    const sr = 16000;
+    const configs = {
+      'samples/sample1.wav': { dur: 0.5, freq: 220, noise: 0.05 },
+      'samples/sample2.wav': { dur: 1.0, freq: 440, noise: 0.05 },
+      'samples/sample3.wav': { dur: 1.5, freq: 330, noise: 0.3  },
+      'samples/sample4.wav': { dur: 0.8, freq: 0,   noise: 0.8  },
+    };
+    const cfg = configs[url] || { dur: 1.0, freq: 220, noise: 0.1 };
+    const N   = Math.round(sr * cfg.dur);
+    const pcm = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const tone  = cfg.freq ? 0.5 * Math.sin(2 * Math.PI * cfg.freq * i / sr) : 0;
+      const noise = (Math.random() * 2 - 1) * cfg.noise;
+      pcm[i] = tone + noise;
+    }
+    statusText.textContent = `Using synthetic audio (${cfg.dur}s, ${cfg.freq ? cfg.freq + 'Hz tone' : 'noise'})`;
+    return pcm;
+  }
+
+  // ── Resize charts on window resize ───────────────────────────────────────
+  window.addEventListener('resize', () => {
+    ['alphaCanvas','lossCanvas'].forEach(id => {
+      const cvs = document.getElementById(id);
+      const w   = Math.floor((cvs.parentElement.clientWidth || 420) * 0.96);
+      if (w > 80) cvs.width = w;
+    });
+  });
+</script>
+
+</body>
+</html>
