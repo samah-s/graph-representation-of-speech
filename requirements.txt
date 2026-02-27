@@ -1,0 +1,10 @@
+streamlit
+numpy
+torch
+librosa
+torch-geometric
+networkx
+matplotlib
+soundfile
+torch-scatter
+torch-sparse
